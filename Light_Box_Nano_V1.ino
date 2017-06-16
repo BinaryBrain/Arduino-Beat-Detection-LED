@@ -13,8 +13,10 @@
 #define GREEN 10
 #define BLUE 11
 
-#define COLOR_BTN 2
-#define BEAT_COLOR_BTN 3
+#define COLOR_BTN 12
+#define BEAT_COLOR_BTN 8
+#define MODE_BTN 7
+#define BTN_4 4 // NOT USED YET
 
 #define POT_THRESHOLD A1
 #define POT_R A2
@@ -31,11 +33,14 @@
 #endif
 
 enum mode_enum {
+  STATIC,
   FLASH,
   CHANGE_COLOR
 };
 
 mode_enum mode = CHANGE_COLOR;
+
+bool modeBtnPushed = false;
 
 void setup() {
   Serial.begin(9600);
@@ -46,6 +51,8 @@ void setup() {
 
   pinMode(COLOR_BTN, INPUT);
   pinMode(BEAT_COLOR_BTN, INPUT);
+  pinMode(MODE_BTN, INPUT);
+  pinMode(BTN_4, INPUT);
 
   // Set ADC to 77khz, max for 10bit
   sbi(ADCSRA, ADPS2);
@@ -85,71 +92,6 @@ float beatFilter(float sample) {
   return yv[2];
 }
 
-void hsv(int hue, int sat, int val) {
-  // h: [0, 359]
-  // s: [0, 255]
-  // v: [0, 255]
-  /* convert hue, saturation and brightness ( HSB/HSV ) to RGB
-     The dim_curve is used only on brightness/value and on saturation (inverted).
-     This looks the most natural.
-  */
-  int r;
-  int g;
-  int b;
-  int base;
-
-  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
-    r = val;
-    g = val;
-    b = val;
-  } else  {
-
-    base = ((255 - sat) * val) >> 8;
-
-    switch (hue / 60) {
-      case 0:
-        r = val;
-        g = (((val - base) * hue) / 60) + base;
-        b = base;
-        break;
-
-      case 1:
-        r = (((val - base) * (60 - (hue % 60))) / 60) + base;
-        g = val;
-        b = base;
-        break;
-
-      case 2:
-        r = base;
-        g = val;
-        b = (((val - base) * (hue % 60)) / 60) + base;
-        break;
-
-      case 3:
-        r = base;
-        g = (((val - base) * (60 - (hue % 60))) / 60) + base;
-        b = val;
-        break;
-
-      case 4:
-        r = (((val - base) * (hue % 60)) / 60) + base;
-        g = base;
-        b = val;
-        break;
-
-      case 5:
-        r = val;
-        g = base;
-        b = (((val - base) * (60 - (hue % 60))) / 60) + base;
-        break;
-    }
-  }
-
-  analogWrite(RED, r);
-  analogWrite(GREEN, g);
-  analogWrite(BLUE, b);
-}
-
 int powerW = 0;
 int powerR = 50;
 int powerG = 0;
@@ -177,8 +119,27 @@ void loop() {
   bool boom = false;
 
   for (i = 0; true; i++) {
-    // FIXME Buttons are not correctly pluged in...
-    if (digitalRead(COLOR_BTN) == HIGH) {
+    if (digitalRead(MODE_BTN) == HIGH) {
+      if (!modeBtnPushed) {
+        modeBtnPushed = true;
+
+        switch (mode) {
+          case STATIC:
+            mode = FLASH;
+            break;
+          case FLASH:
+            mode = CHANGE_COLOR;
+            break;
+          case CHANGE_COLOR:
+            mode = STATIC;
+            break;
+        }
+      }
+    } else {
+      modeBtnPushed = false;
+    }
+
+    if (digitalRead(COLOR_BTN) == HIGH || mode == STATIC) {
       powerW = analogRead(POT_W) / 4;
       powerR = analogRead(POT_R) / 4;
       powerG = analogRead(POT_G) / 4;
@@ -266,3 +227,67 @@ void loop() {
   }
 }
 
+void hsv(int hue, int sat, int val) {
+  // h: [0, 359]
+  // s: [0, 255]
+  // v: [0, 255]
+  /* convert hue, saturation and brightness ( HSB/HSV ) to RGB
+     The dim_curve is used only on brightness/value and on saturation (inverted).
+     This looks the most natural.
+  */
+  int r;
+  int g;
+  int b;
+  int base;
+
+  if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
+    r = val;
+    g = val;
+    b = val;
+  } else  {
+
+    base = ((255 - sat) * val) >> 8;
+
+    switch (hue / 60) {
+      case 0:
+        r = val;
+        g = (((val - base) * hue) / 60) + base;
+        b = base;
+        break;
+
+      case 1:
+        r = (((val - base) * (60 - (hue % 60))) / 60) + base;
+        g = val;
+        b = base;
+        break;
+
+      case 2:
+        r = base;
+        g = val;
+        b = (((val - base) * (hue % 60)) / 60) + base;
+        break;
+
+      case 3:
+        r = base;
+        g = (((val - base) * (60 - (hue % 60))) / 60) + base;
+        b = val;
+        break;
+
+      case 4:
+        r = (((val - base) * (hue % 60)) / 60) + base;
+        g = base;
+        b = val;
+        break;
+
+      case 5:
+        r = val;
+        g = base;
+        b = (((val - base) * (60 - (hue % 60))) / 60) + base;
+        break;
+    }
+  }
+
+  analogWrite(RED, r);
+  analogWrite(GREEN, g);
+  analogWrite(BLUE, b);
+}
