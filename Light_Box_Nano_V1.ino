@@ -8,10 +8,10 @@
 #define MINIMUM_VALUE 5
 #define DECREASE_VALUE 10
 
-#define WHITE 6
-#define RED 9
-#define GREEN 10
-#define BLUE 11
+#define WHITE 9
+#define RED 10
+#define GREEN 11
+#define BLUE 6
 
 #define COLOR_BTN 12
 #define BEAT_COLOR_BTN 8
