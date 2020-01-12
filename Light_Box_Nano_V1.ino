@@ -1,28 +1,35 @@
-#define SAMPLEPERIODUS 200
-#define DOUBLE_BEAT_THRESHOLD 100 // ms
+#define SAMPLEPERIODUS 300
+#define DOUBLE_BEAT_THRESHOLD 200 // ms
+
+// STROBE
+#define STROBE_FREQ 9
+#define STROBE_TIME 5
+#define RANDOM_STROBE true
+#define RANDOM_STROBE_CHANCES 20000 // 1/200
 
 // FLASH MODE
-#define DECREASE_RATION 0.02
+// #define DECREASE_RATIO 0.02
+#define DECREASE_RATIO 0.2
 
 // CHANGE_COLOR MODE
 #define MINIMUM_VALUE 5
-#define DECREASE_VALUE 10
+#define DECREASE_VALUE 90
 
-#define WHITE 9
+#define WHITE 6
 #define RED 10
 #define GREEN 11
-#define BLUE 6
+#define BLUE 9
 
 #define COLOR_BTN 12
 #define BEAT_COLOR_BTN 8
 #define MODE_BTN 7
-#define BTN_4 4 // NOT USED YET
+#define STROBE_BTN 4
 
-#define POT_THRESHOLD A1
+#define POT_THRESHOLD A5
 #define POT_R A2
 #define POT_G A3
 #define POT_B A4
-#define POT_W A5
+#define POT_W A1
 
 // defines for setting and clearing register bits
 #ifndef cbi
@@ -38,12 +45,13 @@ enum mode_enum {
   CHANGE_COLOR
 };
 
-mode_enum mode = CHANGE_COLOR;
+mode_enum mode = FLASH;
 
 bool modeBtnPushed = false;
 
 void setup() {
   Serial.begin(9600);
+  Serial.println("Welcome!");
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(RED, OUTPUT);
   pinMode(GREEN, OUTPUT);
@@ -52,7 +60,7 @@ void setup() {
   pinMode(COLOR_BTN, INPUT);
   pinMode(BEAT_COLOR_BTN, INPUT);
   pinMode(MODE_BTN, INPUT);
-  pinMode(BTN_4, INPUT);
+  pinMode(STROBE_BTN, INPUT);
 
   // Set ADC to 77khz, max for 10bit
   sbi(ADCSRA, ADPS2);
@@ -93,7 +101,7 @@ float beatFilter(float sample) {
 }
 
 int powerW = 0;
-int powerR = 50;
+int powerR = 150;
 int powerG = 0;
 int powerB = 0;
 
@@ -102,26 +110,80 @@ int powerBeatR = 100;
 int powerBeatG = 255;
 int powerBeatB = 255;
 
+int currentBeatH = 180;
+
 int h = 0;
 int s = 255;
 int v = 255;
 
 double ratio = 0;
 
+void strobe(double freq, double sec) {
+  unsigned long initTime = millis();
+  while (millis() < initTime + sec * 1000) {
+    analogWrite(RED, 255);
+    analogWrite(GREEN, 255);
+    analogWrite(BLUE, 255);
+    analogWrite(WHITE, 255);
+
+    delay(500 / freq);
+
+    analogWrite(RED, 0);
+    analogWrite(GREEN, 0);
+    analogWrite(BLUE, 0);
+    analogWrite(WHITE, 0);
+
+    delay(500 / freq);
+  }
+}
+
+void strobeColor(double freq, int sec) {
+  unsigned long initTime = millis();
+  while (millis() < initTime + sec * 1000) {
+    analogWrite(RED, 255);
+    analogWrite(GREEN, 0);
+    analogWrite(BLUE, 0);
+    analogWrite(WHITE, 0);
+
+    delay(333 / freq);
+
+    analogWrite(RED, 0);
+    analogWrite(GREEN, 255);
+    analogWrite(BLUE, 0);
+    analogWrite(WHITE, 0);
+
+
+    delay(333 / freq);
+
+    analogWrite(RED, 0);
+    analogWrite(GREEN, 0);
+    analogWrite(BLUE, 255);
+    analogWrite(WHITE, 0);
+
+    delay(333 / freq);
+  }
+}
+
 void loop() {
   unsigned long time = micros(); // Used to track rate
   unsigned long lastBeatTime = millis();
   float sample, value, envelope, beat, thresh;
-  thresh = 1;
+  thresh = 0.2f;
   unsigned char i;
 
   int power = 0;
   bool boom = false;
 
   for (i = 0; true; i++) {
+    if (digitalRead(STROBE_BTN) == HIGH) {
+      strobe(STROBE_FREQ, STROBE_TIME);
+      // strobeColor(5, 6);
+    }
+
     if (digitalRead(MODE_BTN) == HIGH) {
       if (!modeBtnPushed) {
         modeBtnPushed = true;
+        Serial.println("pushed");
 
         switch (mode) {
           case STATIC:
@@ -144,6 +206,12 @@ void loop() {
       powerR = analogRead(POT_R) / 4;
       powerG = analogRead(POT_G) / 4;
       powerB = analogRead(POT_B) / 4;
+
+      // debug
+      powerW = 50;
+      powerR = 255;
+      powerG = 40;
+      powerB = 100;
 
       analogWrite(WHITE, powerW);
       analogWrite(RED, powerR);
@@ -179,18 +247,27 @@ void loop() {
       beat = beatFilter(envelope);
 
       // Threshold it based on potentiometer on AN1
-      thresh = 0.02f * (float) analogRead(POT_THRESHOLD);
+      //thresh = 0.02f * (float) analogRead(POT_THRESHOLD);
+      thresh = 0.1f;
 
       // If we are above threshold, light up LED
       if (beat > thresh) {
         digitalWrite(LED_BUILTIN, HIGH);
-        ratio = 1;
+        if (millis() > lastBeatTime + DOUBLE_BEAT_THRESHOLD) {
+          ratio = 1;
+        }
+
+        lastBeatTime = millis();
 
         if (mode == CHANGE_COLOR) {
           if (millis() > lastBeatTime + DOUBLE_BEAT_THRESHOLD) {
-            lastBeatTime = millis();
-            h = random(0, 359);
-            s = random(200, 255);
+            if (RANDOM_STROBE && random(RANDOM_STROBE_CHANCES) == 0) {
+              strobeColor(STROBE_FREQ, STROBE_TIME);
+            }
+            h = random(120, 240);
+            s = random(150, 255);
+
+            s = 255;
             v = 255;
           }
         }
@@ -198,17 +275,29 @@ void loop() {
         digitalWrite(LED_BUILTIN, LOW);
       }
 
-      ratio -= DECREASE_RATION;
+      ratio -= DECREASE_RATIO;
 
       if (ratio <= 0) {
         ratio = 0;
       }
 
       if (mode == FLASH) {
-        analogWrite(WHITE, powerBeatW * ratio + powerW * (1 - ratio));
-        analogWrite(RED, powerBeatR * ratio + powerR * (1 - ratio));
-        analogWrite(GREEN, powerBeatG * ratio + powerG * (1 - ratio));
-        analogWrite(BLUE, powerBeatB * ratio + powerB * (1 - ratio));
+        if (millis() > lastBeatTime + DOUBLE_BEAT_THRESHOLD) {
+          currentBeatH = random(359);
+        }
+
+        hsv(currentBeatH, 255, 255 * ratio);
+        // analogWrite(WHITE, powerBeatW * ratio + powerW * (1 - ratio));
+        // analogWrite(RED, powerBeatR * ratio + powerR * (1 - ratio));
+        // analogWrite(GREEN, powerBeatG * ratio + powerG * (1 - ratio));
+        // analogWrite(BLUE, powerBeatB * ratio + powerB * (1 - ratio));
+
+        // analogWrite(WHITE, 10);
+        // analogWrite(BLUE, 255 * ratio + 50 * (1 - ratio));
+        // analogWrite(GREEN, 50 * ratio + 100 * (1 - ratio));
+        if (RANDOM_STROBE && random(RANDOM_STROBE_CHANCES) == 0) {
+          strobeColor(STROBE_FREQ, STROBE_TIME);
+        }
       } else if (mode == CHANGE_COLOR) {
         v -= DECREASE_VALUE;
         if (v < MINIMUM_VALUE) {
@@ -287,7 +376,19 @@ void hsv(int hue, int sat, int val) {
     }
   }
 
-  analogWrite(RED, r);
+  // Base color
+  if (r < 40) {
+    // r = 40;
+  }
+  if (g < 50) {
+    // g = 50;
+  }
+  if (b < 20) {
+    // b = 20;
+  }
+
+  analogWrite(RED,  r);
   analogWrite(GREEN, g);
   analogWrite(BLUE, b);
+  analogWrite(WHITE, random(4));
 }
